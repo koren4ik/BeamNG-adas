@@ -713,7 +713,7 @@ def main():
     bng.scenario.start()
     time.sleep(1)
 
-    # — Сенсоры ego —
+    #Сенсоры ego
     electrics = Electrics()
     pos_sensor = State()
     vehicle.attach_sensor('electrics', electrics)
