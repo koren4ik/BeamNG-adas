@@ -39,19 +39,6 @@ INTERVAL_S = 2.5  # машина успеет проехать ~70м на 100 к
 def save_frame(cam_data, path: str):
     """
     Извлекает RGB-кадр из ответа Camera.poll() и сохраняет на диск.
-
-    [TODO-CAMERA] Формат ответа зависит от версии beamngpy.
-    Возможные варианты:
-      - cam_data['colour']     — название с британским 'u'
-      - cam_data['color']      — без 'u'
-      - cam_data само по себе массив
-    Тип данных:
-      - numpy.ndarray (H, W, 3) или (H, W, 4) — есть alpha-канал
-      - PIL.Image.Image
-      - bytes (raw)
-
-    Текущая реализация — попытка покрыть основные варианты. Если упадёт —
-    сделай print(type(cam_data), cam_data) и пришли мне.
     """
     img = None
 
@@ -96,7 +83,6 @@ def main():
     time.sleep(1)
 
     # ─── Камера ───
-    # [TODO-CAMERA] Уточни в твоей версии beamngpy как создаётся Camera.
     # Аналогично Radar и Ultrasonic, должно быть что-то типа:
     #
     #   camera = Camera('cam', bng, vehicle, pos=..., dir=..., resolution=...,
