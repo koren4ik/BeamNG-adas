@@ -6,7 +6,7 @@ that keeps its lane using a forward-facing camera + classical computer vision pi
 
 **Status (v1.0):** Lane Keeping Assistant works.
 ACC / AEB / CREEP states are implemented but currently rely on a radar that needs
-further tuning — they are on the v1.1 roadmap.
+further tuning - they are on the v1.1 roadmap.
 
 ---
 
@@ -31,7 +31,7 @@ The visualizer shows, in real time:
 - Front camera with steering correction arrow
 - Bird's-eye view with detected lane polynomials
 - Status panel (speed, state, lane validity, offset, steering, throttle, brake)
-- Lane position bar — color-coded zones (green / yellow / red) with the ego vehicle marker
+- Lane position bar - color-coded zones (green / yellow / red) with the ego vehicle marker
 
 Run with `python "adas-v1.01 (visualizer).py" --visualize` to enable.
 
@@ -97,7 +97,7 @@ The system is split into clear layers:
 camera frame (RGB)
     │
     ▼
-ROI crop (45–95% of frame height) — removes sky and hood
+ROI crop (45–95% of frame height) - removes sky and hood
     │
     ▼
 Perspective transform (calibrated SRC_POINTS_FRAC)
@@ -109,7 +109,7 @@ HLS binarization (white + yellow ranges)
 Sliding window or prior-based search
     │
     ▼
-np.polyfit degree 2 — for each line
+np.polyfit degree 2 - for each line
     │
     ▼
 
@@ -150,10 +150,10 @@ produces fewer pixels than the solid right edge — the detector keeps a smoothe
 
 ## Notable engineering moments
 
-These are bugs and dead-ends worth describing — they shaped how the system
+These are bugs and dead-ends worth describing - they shaped how the system
 ended up being built.
 
-### Steering sign — twice inverted
+### Steering sign - twice inverted
 
 Early on, the PD controller used `error = ego_x` and worked, because on
 `tech_ground` the vehicle spawned at world origin. Switching to lane-relative
@@ -163,7 +163,7 @@ to it. Diagnosis was done not by reasoning about coordinate frames, but by
 looking at the CSV — `offset` and `steering` had the same sign across every
 sample, which only happens with positive feedback. One minus sign fixed it.
 
-### "PID feels worse than PD" — the D-term amplifies sensor noise
+### "PID feels worse than PD" - the D-term amplifies sensor noise
 
 After tuning gain scheduling, steering still felt jittery at speed: Δsteer was
 oscillating ~6% of full range every tick. The cause: `lane_offset_m` is computed
@@ -190,7 +190,7 @@ This is queued for v1.1.
 
 ---
 
-## CREEP — slow approach to a stopped target
+## CREEP - slow approach to a stopped target
 
 CREEP is a state that activates when the vehicle is fully stopped, the radar
 sees a target very close, and that target is not moving. Instead of holding the
@@ -200,8 +200,8 @@ inching forward while monitoring the front ultrasonic sensor. If the gap closes
 to `US_STOP_DIST` it goes back to STOP; if the lead vehicle moves away, it
 returns to FOLLOW.
 
-This was something I wanted from a real ADAS — the smooth "follow the car ahead
-in stop-and-go traffic" behavior — so I built it directly into the state machine.
+This was something I wanted from a real ADAS - the smooth "follow the car ahead
+in stop-and-go traffic" behavior - so I built it directly into the state machine.
 
 ---
 
