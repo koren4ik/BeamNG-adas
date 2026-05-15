@@ -223,10 +223,10 @@ pip install requirements.txt
 
 ```bash
 # Without visualization (lighter on CPU)
-python adas_v0_5.py
+python adas-v1.01 (visualizer).py
 
 # With visualization window
-python adas_v0_5.py --visualize
+python adas-v1.01 (visualizer).py --visualize
 ```
 
 By default the script starts BeamNG, loads `automation_test_track`, spawns the
@@ -241,20 +241,22 @@ Press Ctrl+C in the terminal to stop. The full per-tick log is written to
 ## Project structure
 
 ```
-adas_v0_5.py          Main entry point — controller, state machine, main loop
-lane_detection.py     Lane detection pipeline (perspective transform, sliding window, polyfit)
-visualizer.py         Real-time visualization (cv2.imshow + composite layout)
+adas-v1.01 (visualizer).py          Main entry point — controller, state machine, main loop
+lane_detection.py     				Lane detection pipeline (perspective transform, sliding window, polyfit)
+visualizer.py         				Real-time visualization (cv2.imshow + composite layout)
 
-test_adas.py          Unit tests for pure logic (PID, state transitions, helpers)
-camera_test.py        Captures sample frames for offline calibration
-calibrate.py          Visualizes every step of the lane pipeline on a single image
+# tests\camera_test:
+test_adas.py          				Unit tests for pure logic (PID, state transitions, helpers)
+camera_test.py        				Captures sample frames for offline calibration
+calibrate.py          				Visualizes every step of the lane pipeline on a single image
 
-radar_inspect.py      One-shot diagnostic: what does radar.poll() actually return?
-radar_verify.py       Tests elevation/azimuth/intensity filters on radar data
-radar_find_doppler.py Identifies which column of radar output is the Doppler signal
-radar_signature.py    Prints the actual Python signature of the Radar() constructor
+# tests\radar_debug:
+radar_inspect.py      				One-shot diagnostic: what does radar.poll() actually return?
+radar_verify.py       				Tests elevation/azimuth/intensity filters on radar data
+radar_find_doppler.py 				Identifies which column of radar output is the Doppler signal
+radar_signature.py    				Prints the actual Python signature of the Radar() constructor
 
-adas_log.csv          (generated) per-tick log of every measurement and control output
+adas_log.csv          				(generated) per-tick log of every measurement and control output
 ```
 
 ---
