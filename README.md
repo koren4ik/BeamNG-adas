@@ -8,6 +8,12 @@ that keeps its lane using a forward-facing camera + classical computer vision pi
 ACC / AEB / CREEP states are implemented but currently rely on a radar that needs
 further tuning - they are on the v1.1 roadmap.
 
+**Note:** BeamNG.tech ships with a [built-in LKA module][beamng-lka].
+This project reimplements lane keeping from scratch (camera → CV pipeline
+→ controller) as a learning exercise — the goal was to build the full
+perception-to-actuation stack, not just configure a black-box module.
+
+[beamng-lka]: https://documentation.beamng.com/beamng_tech/adas_features/lane_keeping_assist/
 ---
 
 ## Highlights
