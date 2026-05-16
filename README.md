@@ -1,5 +1,7 @@
 # ADAS Prototype — **ACC + AEB + LKA** in BeamNG.tech
 
+[🇬🇧 English](README.md) | [🇷🇺 Русский](README_RU.md)
+
 A research prototype of an Advanced Driver Assistance System built on top of
 [BeamNG.tech](https://documentation.beamng.com/beamng_tech/), simulating a vehicle
 that keeps its lane using a forward-facing camera + classical computer vision pipeline.
