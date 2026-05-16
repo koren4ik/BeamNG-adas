@@ -56,14 +56,14 @@ Run with `python "adas-v1.01 (visualizer).py" --visualize` to enable.
         ▼                ▼                 ▼
    ┌─────────┐    ┌─────────────┐    ┌──────────┐
    │ Camera  │    │ Radar / US  │    │ State /  │
-   │  640×360│    │   sensors   │    │ Electrics│
+   │ 640×360 │    │   sensors   │    │ Electrics│
    └────┬────┘    └──────┬──────┘    └────┬─────┘
         ▼                ▼                 ▼
    ┌─────────┐    ┌─────────────┐    ┌──────────┐
    │  Lane   │    │ Distance,   │    │  Speed,  │
    │detection│    │ TTC,        │    │  pose    │
    │pipeline │    │ leader info │    │          │
-   └────┬────┘    └──────┬──────┘    └────┬─────┘
+   └────┬────┘    └──────┬──────┘    └─────┬────┘
         │                │                 │
         └────────────────┼─────────────────┘
                          ▼
@@ -146,7 +146,7 @@ produces fewer pixels than the solid right edge — the detector keeps a smoothe
 
 | Version | What changed | Key result |
 |---|---|---|
-| **v0.1–v0.2, legacy** | First prototype, single `while True` loop on `tech_ground` map, ACC + AEB inline | It is working, but there is no options to extend. |
+| **v0.1–v0.2, legacy** | First prototype, single `while True` loop on `tech_ground` map, ACC + AEB inline | It is kinda working, but it's harder to extend. |
 | **v0.3–v0.4, legacy** | State machine introduced, PD steering keeping `ego_x = 0` (world coordinate) | Worked, but locked to one specific map and spawn point. |
 | **v0.5** | Refactor into classes, dataclasses, 22 unit tests, named constants in `Config` | Clean foundation. Same behavior, much easier to extend. |
 | **v1.0 (beta)** | Camera + lane detection pipeline + PID with LPF / slew rate / gain scheduling | **Lane keeping works.** 6.7 cm stdev at 35 km/h. |
@@ -191,7 +191,7 @@ Eventually a diagnostic script (`radar_inspect.py`) showed that the radar return
 of ±34° in both axes. The closest hits were just the road surface in front of the
 bumper. The proper fix is two-layer:
 - Configure the sensor with realistic FOV (`field_of_view_y=6`, `half_angle_deg=12`),
-- And filter remaining rays by elevation / azimuth / intensity before using `argmin`.
+- Filter remaining rays by elevation / azimuth / intensity before using `argmin`.
 
 This is queued for v1.1.
 
@@ -248,7 +248,7 @@ Press Ctrl+C in the terminal to stop. The full per-tick log is written to
 ## Project structure
 
 ```
-"adas-v1.01 (visualizer).py"        Main entry point — controller, state machine, main loop
+"adas-v1.01 (visualizer).py"		Main entry point — controller, state machine, main loop
 lane_detection.py     				Lane detection pipeline (perspective transform, sliding window, polyfit)
 visualizer.py         				Real-time visualization (cv2.imshow + composite layout)
 
@@ -274,7 +274,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
   camera mounted on this vehicle on this map. Different cameras / maps need
   re-calibration via `camera_test.py` + `calibrate.py`.
 - The pipeline assumes road markings are present and reasonably visible.
-  Faded paint, shadows or wet asphalt would degrade detection — not tested.
+  Faded paint, shadows or night time would degrade detection — not tested.
 - Tested only on properly marked, paved roads. Off-road / gravel / unmarked roads are
   out of scope.
 - v1.0 disables the radar via a workaround (`dir=(0,0,1)`). ACC/AEB states exist
