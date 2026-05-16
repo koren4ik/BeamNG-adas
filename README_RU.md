@@ -1,6 +1,4 @@
-# Прототип ADAS системы — **ACC + AEB + LKA** в BeamNG.tech
-
-[🇬🇧 English](README.md) | [🇷🇺 Русский](README_RU.md)
+# Прототип ADAS системы — **ACC + AEB + LKA** в BeamNG.tech ([EN](README.md) | [РУ](README_RU.md))
 
 Исследовательский прототип усовершенствованной системы помощи водителю на базе
 [BeamNG.tech](https://documentation.beamng.com/beamng_tech/), симулирующий автомобиль
