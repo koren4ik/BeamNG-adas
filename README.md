@@ -13,7 +13,7 @@ This project reimplements lane keeping from scratch (camera → CV pipeline
 → controller) as a learning exercise — the goal was to build the full
 perception-to-actuation stack, not just configure a black-box module.
 
-[beamng-lka]: https://documentation.beamng.com/beamng_tech/adas_features/lane_keeping_assist/
+[beamng-lka]: https://documentation.beamng.com/beamng_tech/adas_features/lane_keeping_assist/_index_en/
 ---
 
 ## Highlights
