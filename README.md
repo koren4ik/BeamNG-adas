@@ -19,7 +19,7 @@ perception-to-actuation stack, not just configure a black-box module.
 
 ---
 
-## Highlights
+## Highlights:
 
 | Metric | Value |
 |---|---|
@@ -31,7 +31,7 @@ perception-to-actuation stack, not just configure a black-box module.
 
 ---
 
-## Demo 
+## Demo:
 
 ![Orbital camera view (same scenario)](docs/orbit_cam.png)
 ![ADAS visualizer](docs/visualizer.png)
@@ -46,7 +46,7 @@ Run with `python "adas-v1.01 (visualizer).py" --visualize` to enable.
 
 ---
 
-## Architecture
+## Architecture:
 
 ```
                 ┌─────────────────┐
@@ -100,7 +100,7 @@ The system is split into clear layers:
 
 ---
 
-## Lane keeping pipeline
+## Lane keeping pipeline:
 
 ```
 camera frame (RGB)
@@ -144,7 +144,7 @@ produces fewer pixels than the solid right edge — the detector keeps a smoothe
 
 ---
 
-## Project evolution
+## Project evolution:
 
 | Version | What changed | Key result |
 |---|---|---|
@@ -157,7 +157,7 @@ produces fewer pixels than the solid right edge — the detector keeps a smoothe
 
 ---
 
-## Notable engineering moments
+## Notable engineering moments:
 
 These are bugs and dead-ends worth describing - they shaped how the system
 ended up being built.
@@ -214,7 +214,7 @@ in stop-and-go traffic" behavior - so I built it directly into the state machine
 
 ---
 
-## How to run
+## How to run:
 
 ### Prerequisites
 
@@ -247,7 +247,7 @@ Press Ctrl+C in the terminal to stop. The full per-tick log is written to
 
 ---
 
-## Project structure
+## Project structure:
 
 ```
 "adas-v1.01 (visualizer).py"		Main entry point — controller, state machine, main loop
@@ -270,7 +270,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
 
 ---
 
-## Limitations
+## Limitations:
 
 - Lane detection calibration (`SRC_POINTS_FRAC`) is hand-tuned for the specific
   camera mounted on this vehicle on this map. Different cameras / maps need
@@ -287,7 +287,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
 
 ---
 
-## Tech stack
+## Tech stack:
 
 - **Simulator:** BeamNG.tech v0.38.5
 - **Python:** 3.10+
@@ -300,7 +300,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
 
 ---
 
-## What's next (v1.1+)
+## What's next (v1.1+):
 
 - Properly configured radar (narrow FOV + post-filter by elevation/azimuth/intensity)
 - Re-enable ACC and AEB in real driving scenarios
@@ -311,7 +311,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
 
 ---
 
-## License
+## License:
 
 The code in this repository (controller, lane detection pipeline, visualizer,
 tests) is a personal research project. Code is provided as-is; no warranty.
