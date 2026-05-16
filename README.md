@@ -216,17 +216,17 @@ in stop-and-go traffic" behavior - so I built it directly into the state machine
 ### Install Python dependencies
 
 ```bash
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 ### Run
 
 ```bash
 # Without visualization (lighter on CPU)
-python adas-v1.01 (visualizer).py
+python "adas-v1.01 (visualizer).py"
 
 # With visualization window
-python adas-v1.01 (visualizer).py --visualize
+python "adas-v1.01 (visualizer).py" --visualize
 ```
 
 By default the script starts BeamNG, loads `automation_test_track`, spawns the
@@ -241,7 +241,7 @@ Press Ctrl+C in the terminal to stop. The full per-tick log is written to
 ## Project structure
 
 ```
-adas-v1.01 (visualizer).py          Main entry point — controller, state machine, main loop
+"adas-v1.01 (visualizer).py"        Main entry point — controller, state machine, main loop
 lane_detection.py     				Lane detection pipeline (perspective transform, sliding window, polyfit)
 visualizer.py         				Real-time visualization (cv2.imshow + composite layout)
 
@@ -268,7 +268,7 @@ adas_log.csv          				(generated) per-tick log of every measurement and cont
   re-calibration via `camera_test.py` + `calibrate.py`.
 - The pipeline assumes road markings are present and reasonably visible.
   Faded paint, shadows or wet asphalt would degrade detection — not tested.
-- Tested only on prograde, paved roads. Off-road / gravel / unmarked roads are
+- Tested only on properly marked, paved roads. Off-road / gravel / unmarked roads are
   out of scope.
 - v1.0 disables the radar via a workaround (`dir=(0,0,1)`). ACC/AEB states exist
   in code and are tested by unit tests, but won't trigger in practice until v1.1
