@@ -3,11 +3,13 @@ from beamngpy.sensors import Electrics, Radar, Ultrasonic, State, Camera
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
+import argparse
 import csv
 import math
 import time
 import numpy as np
 from lane_detection import LaneDetector     # Lane keeping detector (отдельный модуль)
+from visualizer import Visualizer
 
 
 # STATE MACHINE
@@ -22,42 +24,30 @@ class ADASState(Enum):
 # КОНСТАНТЫ
 @dataclass(frozen=True)
 class Config:
-    # ────────────────────────────────────────────────────────────
     # СЦЕНА — карта, спавн, лидер
-    # ────────────────────────────────────────────────────────────
-    # Меняй этот блок чтобы перенести тест на другую карту/позицию.
 
     # — Карта —
     SCENARIO_LEVEL:     str   = 'automation_test_track'
-    SCENARIO_NAME:      str   = 'adas_v05'
+    SCENARIO_NAME:      str   = 'adas_v1.2'
 
-    # — Спавн ego —
-    # Точка спавна выбрана на прямом участке трассы automation_test_track
-    # в левой полосе (карта с left-hand convention, но наш LKA настроен на
-    # правостороннее движение → ego de-facto на встречке этой карты).
+    # — Спавн ego-машины —
+    # Точка спавна выбрана на прямом участке трассы automation_test_track в левой полосе (карта с left-hand convention,
+    # но наш LKA настроен на правостороннее движение → ego de-facto на встречке этой карты).
     # См. README → Limitations.
     EGO_POS:        tuple = (-8.062, -263.353, 119.984)
     EGO_ROT_QUAT:   tuple = (0, 0, 0.7046, 0.7096)
 
     # — Спавн лидера —
-    # Смещение лидера относительно ego в мировых координатах. Вектор должен
-    # быть параллелен направлению движения по дороге (то есть "впереди ego").
-    # По логам предыдущих тестов direction = (-1, 0.067, 0) → шаг 30м даёт:
-    LEADER_OFFSET:  tuple = (-29.8, 4.0, 0.0)
+    LEADER_OFFSET:  tuple = (-29.8, 4.0, 0.0)   # смещение лидера относительно ego
 
     # — Параметры лидера —
-    # 30 км/ч для лидера на automation_test_track: ниже чем ego target (40),
-    # чтобы ego догнал и активировал FOLLOW. Не настолько мало чтобы сразу
-    # уйти в CREEP (для CREEP лидер останавливается через LEADER_STOP_AT секунд).
-    LEADER_BASE_SPEED:  float = 30 / 3.6
-    LEADER_AMPLITUDE:   float = 0          # не используется при LeaderAI
-    LEADER_PERIOD:      float = 10.0       # не используется при LeaderAI
-    LEADER_STOP_AT:     float = 30.0       # секунд: лидер останавливается → CREEP-тест
+    LEADER_BASE_SPEED:  float = 30 / 3.6   # максимальная скорость лидера
+    LEADER_AMPLITUDE:   float = 0          # амлитуда скорости
+    LEADER_PERIOD:      float = 10.0       # период амплитуды
+    LEADER_STOP_AT:     float = 30.0       # t через которое лидер останавливается
 
-    # ────────────────────────────────────────────────────────────
-    # EGO — поведение нашего автомобиля
-    # ────────────────────────────────────────────────────────────
-    TARGET_SPEED:       float = 40 / 3.6
+    # EGO — поведение основного автомобиля
+    TARGET_SPEED:       float = 40 / 3.6   # установленная скорость
     # SAFETY_HEADWAY — жёсткий минимум, ниже него регулятор тормозит резко.
     # COMFORT_HEADWAY — целевая дистанция, регулятор стремится к ней.
     SAFETY_HEADWAY:     float = 2.0   # сек — НИЖЕ ЭТОГО НЕЛЬЗЯ
@@ -71,11 +61,7 @@ class Config:
     RADAR_DETECT_DIST:  float = 90.0
     RADAR_LOST_DIST:    float = 120.0
 
-    # Фильтр лучей радара. Сенсор возвращает массив ~36k точек на тик —
-    # это попадания каждого луча конуса (±34° по вертикали и горизонтали).
-    # Без фильтра argmin находит ближайшую точку = асфальт под бампером
-    # или часть кузова ego. Нам нужны точки которые реально соответствуют
-    # объектам впереди:
+    # Фильтр лучей радара:
     #   - elevation (вертикальный угол луча) близко к 0 — не земля, не небо
     #   - azimuth (горизонтальный угол) близко к 0 — впереди, не сбоку
     #   - intensity достаточно сильная — не помеха
@@ -89,36 +75,21 @@ class Config:
     #   статичный знак: doppler = ego_speed (мы к нему приближаемся со своей скоростью)
     #   движущийся вместе с нами лидер: doppler ≈ 0
     # Если |doppler - ego_speed| < TOL → объект статичный, отбрасываем.
-    # 2.0 м/с ≈ 7 км/ч допустимого "дрейфа" чтобы не отбраковать
-    # медленно-движущийся лидер или статичный объект при колебаниях измерения.
-    # Применяется только когда ego САМ движется (>1 м/с), иначе на остановке
-    # все доплеры около нуля и фильтр убил бы реального стоящего лидера.
     RADAR_DOPPLER_STATIC_TOL: float = 2.0   # м/с
     RADAR_MIN_EGO_SPEED:      float = 1.0   # м/с — порог активации фильтра
 
     # — Трекинг лидера (защита от потери при экстренном торможении) —
-    # Если лидер только что был "движущимся" и резко стал статичным
-    # (например затормозил впритык), doppler-фильтр это засчитает как
-    # "знак на обочине" и сбросит has_target. State уйдёт в CRUISE,
-    # ego начнёт разгоняться → столкновение через 2 секунды.
-    #
-    # Решение: запоминаем "последний реальный target" и в течение
-    # TRACKING_TIMEOUT секунд держим его как валидный, даже если doppler-фильтр
-    # его отбраковал. Подтверждение: новая точка должна быть в радиусе
-    # TRACKING_DIST_TOL метров от последней (чтобы это был "тот же лидер",
-    # не случайный знак).
+    # Если лидер только что был "движущимся" и резко стал статичным (например затормозил впритык),
+    # doppler-фильтр это засчитает как "знак на обочине" и сбросит has_target.
+    # State уйдёт в CRUISE, ego начнёт разгоняться → столкновение через 2 секунды.
     TRACKING_TIMEOUT:   float = 2.0    # сек — сколько помним лидера без обновления
     TRACKING_DIST_TOL:  float = 5.0    # м — допуск дистанции для "это тот же объект"
 
     # — УЗ / CREEP —
-    US_STOP_DIST:       float = 3.5
-    US_CREEP_SPEED:     float = 5 / 3.6
-    CREEP_RADAR_DIST:   float = 15.0
-    # CREEP_RADAR_STOP — на этой дистанции от лидера CREEP переходит в STOP.
-    # 3.5м — безопасная дистанция остановки, в реальном ADAS примерно так же.
-    # Раньше было 2.0м, но при медленном ползании 5 км/ч ego от 5м до 2м
-    # ехало 5-7 секунд, что повышало шанс схватить краш BeamNG до завершения.
-    CREEP_RADAR_STOP:   float = 3.5
+    US_STOP_DIST:       float = 2       # дистанция остановки по УЗ
+    US_CREEP_SPEED:     float = 5 / 3.6 # скорость CREEP
+    CREEP_RADAR_DIST:   float = 15.0    # дистанция при которой активируется CREEP
+    CREEP_RADAR_STOP:   float = 3.5     # дистанция остановки по радару
     CREEP_BRAKE_SPEED:  float = 20 / 3.6
     US_TRIGGER_DIST:    float = 5.0   # когда УЗ начинает считать «препятствие близко»
 
@@ -160,66 +131,40 @@ class Config:
     # — Inertia при потере полосы —
     # Сколько тиков подряд держим последний валидный error при отказе детектора.
     # При LOOP_DT=0.1с (10 Гц), 5 тиков = 0.5с.
-    # Логика: на короткое выпадение (тени, плохая разметка, артефакты) —
-    # продолжаем рулить «по последнему хорошему». На длинное (детектор
-    # окончательно потерял полосу) — плавно отпускаем руль к нулю.
-    # На повороте это даёт шанс «допройти» поворот вслепую если детектор
-    # отвалился на пару кадров.
+    # Логика: на короткое выпадение (тени, плохая разметка, артефакты) — продолжаем рулить «по последнему хорошему».
+    # На длинное (детектор окончательно потерял полосу) — плавно отпускаем руль к нулю.
+    # На повороте это даёт шанс «допройти» поворот вслепую если детектор отвалился на пару кадров.
     STEER_INERTIA_TICKS:    int   = 5
     # Decay-фактор после превышения порога: error *= STEER_INERTIA_DECAY каждый тик.
     # При 10 Гц коэф 0.7 даёт затухание за ~5 тиков (0.5с) → почти ноль.
     STEER_INERTIA_DECAY:    float = 0.7
 
     # — Lookahead steering —
-    # Рулим не по offset под бампером, а по offset на LOOKAHEAD_M метров впереди
-    # (по полиному полосы). Это даёт «предвидение» — машина начинает крутить руль
-    # ДО входа в поворот, а не реагирует когда уже в нём.
-    #
-    # Геометрия: на bird's-eye 1 пиксель = LANE_WIDTH_M / lane_width_px метров.
-    # Bird's-eye высота 400 пикселей соответствует ~30м перед машиной
-    # (зависит от калибровки perspective). Так что LOOKAHEAD_M=8м это
-    # примерно 100 пикселей вверх от y_eval=399.
-    #
-    # Lookahead distance scheduled по скорости: на 10 км/ч смотрим близко
-    # (большой lookahead даёт большие коррекции на мелочи), на 60 км/ч смотрим
-    # далеко (нужно время среагировать на поворот).
+    # Рулим не по offset под бампером, а по offset на LOOKAHEAD_M метров впереди (по полиному полосы).
+    # Это даёт «предвидение» — машина начинает крутить руль ДО входа в поворот, а не реагирует когда уже в нём.
     LOOKAHEAD_M_AT_LOW:     float = 4.0    # @ STEER_V_LOW
     LOOKAHEAD_M_AT_HIGH:    float = 12.0   # @ STEER_V_HIGH
 
     # — Curvature-based speed limiting —
-    # Считаем радиус кривизны полосы по полиному, и из него — максимальную
-    # безопасную скорость в повороте через формулу v = sqrt(a_lat * R).
+    # Считаем радиус кривизны полосы по полиному, и из него — максимальную безопасную скорость в повороте через формулу v = sqrt(a_lat * R).
     # Где a_lat — комфортное боковое ускорение пассажира.
-    #
+
     # Реальные значения:
     #   2.0 м/с² — очень комфортно, как такси
     #   3.5 м/с² — обычный городской поворот
     #   5.0 м/с² — спортивно, пассажир может прижаться
     # У нас 3.0 — баланс между скоростью и тем чтобы не вылететь.
     LAT_ACCEL_MAX:          float = 3.0    # м/с²
-    # Минимум на который можно урезать скорость по curvature.
-    # Иначе на очень крутом повороте машина встанет.
-    CURVE_MIN_SPEED:        float = 15 / 3.6   # м/с
+    CURVE_MIN_SPEED:        float = 15 / 3.6   # # Минимум на который можно урезать скорость по curvature (м/с)
 
     # Сглаживание выхода руля
-    # Slew rate тоже scheduled: на низкой скорости можно резче поворачивать
-    # (нужно для манёвров), на высокой — плавнее (комфорт + безопасность).
+    # Slew rate тоже scheduled: на низкой скорости можно резче поворачивать (нужно для манёвров), на высокой — плавнее (комфорт + безопасность).
     STEER_SLEW_AT_LOW:  float = 1.5
     STEER_SLEW_AT_HIGH: float = 0.6
     # LPF tau — постоянная во времени фильтра. Больше τ = плавнее руль, но медленнее реакция.
     STEER_LPF_TAU:      float = 0.25
 
     # — Slew rate для throttle и brake —
-    # Ограничивает скорость изменения педалей. Без этого регуляторы могут
-    # дёргать газ дискретными импульсами 2 раза в секунду (bang-bang
-    # поведение) — едет правильно, но управление выглядит ступенчато.
-    #
-    # При LOOP_DT=0.1 (10 Гц):
-    #   THROTTLE_SLEW_RATE=0.5/сек → max Δthr = 0.05 за тик (за 2с с 0 до 1)
-    #   BRAKE_SLEW_RATE=1.0/сек    → max Δbrk = 0.10 за тик (за 1с с 0 до 1)
-    # Тормоз быстрее газа потому что в острых ситуациях тормоз должен
-    # срабатывать в 2 раза резвее (AEB всё равно идёт мимо slew, это для
-    # обычного торможения в FOLLOW).
     THROTTLE_SLEW_RATE: float = 0.5
     BRAKE_SLEW_RATE:    float = 1.0
 
@@ -250,14 +195,11 @@ class Config:
     # Сейчас целевая частота 10 Гц совпадает с реально достижимой, что:
     #   1) даёт правильно работающий slew rate (формула slew*dt стабильна)
     #   2) снижает нагрузку на BeamNG (меньше TCP-сообщений)
-    #   3) не теряет в качестве управления — на 30 км/ч за 100мс машина
-    #      проезжает 0.85м, реакция всё ещё своевременная
     LOOP_DT:            float = 0.1
     DT_MIN:             float = 0.05
     DT_MAX:             float = 0.3
 
-    # Радар
-    RADAR_NO_TARGET:    float = 9999.0  # сторожевое значение «нет цели»
+    RADAR_NO_TARGET:    float = 9999.0  # сторожевое значение «нет цели» на радаре
 
     # Логирование
     LOG_W:              int   = 72
@@ -317,7 +259,7 @@ class PIDController:
         return max(self.out_min, min(self.out_max, out))
 
 
-#  ИЗМЕРЕНИЯ (для логирования - сейчас не используется)
+#  ИЗМЕРЕНИЯ (для логирования)
 @dataclass
 class Measurements:
 # Снимок сенсоров на текущем тике.
@@ -592,10 +534,7 @@ class ADASController:
         m.ego_y = ego_pos[1]
 
         # Радар — отделяем «нет цели» от «цель далеко».
-        # Сенсор возвращает ~36k точек/тик (все лучи конуса). Без фильтра
-        # ближайшая точка это ВСЕГДА асфальт под бампером (elevation в минус)
-        # или часть кузова ego (elevation в плюс). Фильтр оставляет только
-        # горизонтальные передние сильные сигналы — реальные объекты.
+        # Сенсор возвращает ~36k точек/тик (все лучи конуса). Без фильтра это будет п*здос.
         # Структура колонок (выяснено через radar_inspect / radar_find_doppler):
         #   col 0 — distance (м)
         #   col 1 — doppler (м/с, положительный = сближение)
@@ -614,10 +553,9 @@ class ADASController:
             )
             geom_filtered = radar_data[mask]   # прошли elev/azim/intens
 
-            # Дополнительный фильтр: убираем СТАТИЧНЫЕ объекты (столбы, знаки,
-            # здания). У статичного объекта doppler ≈ ego_speed (потому что
-            # мы к нему приближаемся со своей скоростью). У движущегося с нами
-            # лидера doppler ≈ 0. Если |doppler - ego_speed| мало — это знак.
+            # Дополнительный фильтр: убираем СТАТИЧНЫЕ объекты (столбы, знаки, здания).
+            # У статичного объекта doppler ≈ ego_speed (потому что мы к нему приближаемся со своей скоростью).
+            # У движущегося с нами лидера doppler ≈ 0. Если |doppler - ego_speed| мало — это знак.
             # ВАЖНО: фильтр работает только когда ego САМ движется.
             if (geom_filtered.size > 0
                     and m.speed > CFG.RADAR_MIN_EGO_SPEED):
@@ -630,9 +568,9 @@ class ADASController:
                 doppler_filtered = geom_filtered
 
             # — ТРЕКИНГ ЛИДЕРА —
-            # Если doppler-фильтр всё отбраковал, но у нас был "недавно реальный
-            # target" — ищем в geom_filtered (БЕЗ doppler-фильтра) точку рядом
-            # с last_target_dist. Если есть — это тот же лидер, только остановился.
+            # Если doppler-фильтр всё отбраковал, но у нас был "недавно реальный target" —
+            # ищем в geom_filtered (БЕЗ doppler-фильтра) точку рядом с last_target_dist.
+            # Если есть — это тот же лидер, только остановился.
             # Используем его вместо doppler-filtered.
             time_since_last = m.t - self.last_target_t
             if (doppler_filtered.size == 0
@@ -779,18 +717,18 @@ class ADASController:
         # — ВЫБОР SETPOINT с INERTIA при отказе детектора —
         # При lane_valid=True — рулим по смещению, запоминаем последний error.
         # При lane_valid=False:
-        #   • первые N тиков (STEER_INERTIA_TICKS) — держим last_valid_error
-        #     как есть. Это «память» руля: на короткие отказы (тени, артефакты)
-        #     мы не сбрасываемся в 0, а продолжаем рулить как только что.
+        #   • первые N тиков (STEER_INERTIA_TICKS) — держим last_valid_error как есть.
+        #     Это «память» руля: на короткие отказы (тени, артефакты) мы не сбрасываемся в 0,
+        #     а продолжаем рулить как только что.
         #   • после N тиков — медленно decay'им к нулю (STEER_INERTIA_DECAY),
         #     чтобы избежать «зависшего» руля при долгом отказе детектора.
         # ЗНАК: при lane_offset_m > 0 (машина вправо от центра) нужен steering < 0
         # для возврата → error = -lane_offset_m.
+
         # — ВЫБОР SETPOINT — LOOKAHEAD CONTROL —
-        # Рулим не по текущему offset (под бампером), а по offset на LOOKAHEAD_M
-        # метров впереди (по нашему полиному). Это даёт «предвидение» поворота:
-        # ego начинает крутить руль ДО входа в поворот, а не реагирует когда
-        # уже в нём.
+        # Рулим не по текущему offset (под бампером), а по offset на LOOKAHEAD_M метров впереди (по нашему полиному).
+        # Это даёт «предвидение» поворота:
+        # ego начинает крутить руль ДО входа в поворот, а не реагирует когда уже в нём.
         # ЗНАК: при offset_ahead > 0 (центр полосы впереди СЛЕВА от машины) → steer < 0.
         if m.lane_valid:
             error = -m.lane_offset_ahead_m
@@ -872,8 +810,7 @@ class ADASController:
         # Формула v_max = sqrt(a_lat * R), где
         #   a_lat — комфортное боковое ускорение (CFG.LAT_ACCEL_MAX)
         #   R — радиус кривизны полосы впереди
-        # Это даёт классическое поведение «автомобиль чувствует поворот и
-        # сбрасывает скорость», как у штатных ACC + LKA систем.
+        # Это даёт классическое поведение «автомобиль чувствует поворот и сбрасывает скорость», как у штатных ACC + LKA систем.
         target_speed = CFG.TARGET_SPEED
         if m.lane_valid and m.lane_curvature_r < 1e5:
             v_max_curve = math.sqrt(CFG.LAT_ACCEL_MAX * m.lane_curvature_r)
@@ -963,14 +900,6 @@ class ADASController:
 
     # AEB
     def control_aeb(self, m: Measurements, steering: float):
-        """AEB — экстренное торможение, slew rate не применяется чтобы тормоз
-        сработал мгновенно.
-
-        Раньше тут был костыль на parkingbrake при speed<1.5, потому что в
-        аркадном режиме BeamNG `brake=1.0` на остановке переключал коробку в
-        reverse. Сейчас main() переключает машины в realistic_automatic,
-        поэтому brake=1.0 просто фиксирует машину без сюрпризов с реверсом.
-        Костыль с порогом скорости здесь больше не нужен."""
         self.vehicle.control(throttle=0, brake=1.0, parkingbrake=0,
                              steering=steering)
         self.prev_throttle = 0.0
@@ -1042,8 +971,6 @@ class LeaderAI:
 
     Используется на картах с AI road network (типа automation_test_track).
     На пустых картах (tech_ground) использовать LeaderDriver вместо этого.
-
-    API совместимо с LeaderDriver: метод step() возвращает leader_stopped.
     """
     def __init__(self, leader_vehicle, leader_electrics, leader_pos_sensor):
         self.veh = leader_vehicle
@@ -1053,7 +980,7 @@ class LeaderAI:
         self._ai_started = False
 
     def start(self, target_speed_ms: float):
-        """Активирует AI с заданной скоростью. Вызывается ОДИН РАЗ перед циклом."""
+        # Активирует AI с заданной скоростью. Вызывается ОДИН РАЗ перед циклом.
         self.veh.ai.set_mode('span')
         self.veh.ai.set_speed(target_speed_ms, 'set')
         try:
@@ -1085,10 +1012,6 @@ class LeaderAI:
             return self.stopped
 
         # Обычный режим: poll-им сенсоры (для нашего логирования), AI рулит сам.
-        # ВАЖНО: возвращаем self.stopped, а НЕ False — иначе после остановки
-        # leader_stopped в state-machine будет мерцать True/False каждый тик,
-        # и control_follow не зайдёт в ветку "мягкий съезд по дистанции"
-        # → ego затормозит на safety_dist (10м) и не подъедет к лидеру близко.
         self.veh.poll_sensors()
         return self.stopped
 
@@ -1168,7 +1091,13 @@ class CsvLogger:
 
 #  MAIN
 def main():
-    bng = BeamNGpy('localhost', 64256, home=r'D:\Scripts\BeamNG.tech.v0.38.5.0', gfx='vk')
+    # Аргументы запуска
+    parser = argparse.ArgumentParser(description="ADAS v1.0 — Lane Keeping Assistant")
+    parser.add_argument('--visualize', action='store_true',
+                        help='Включить окно визуализации (камера + BEV + HUD)')
+    args = parser.parse_args()
+
+    bng = BeamNGpy('localhost', 64256, home=r'D:\Scripts\BeamNG.tech.v0.38.5.0')
     bng.open(launch=True)
 
     scenario = Scenario(CFG.SCENARIO_LEVEL, CFG.SCENARIO_NAME)
@@ -1185,13 +1114,11 @@ def main():
     time.sleep(1)
 
     # — Переключаем коробку в realistic_automatic —
-    # ВАЖНО: в режиме по умолчанию (arcade) BeamNG автоматически переключается
-    # в reverse при удержании тормоза на остановке. Это ломает поведение ACC/AEB:
-    # ego тормозит → останавливается → BeamNG ставит R → ego катится назад →
-    # дистанция растёт → ACC видит "отстал от лидера" → газ → подъезжает →
-    # снова тормозит → цикл качелей.
-    # В realistic_automatic машина по умолчанию в D, reverse только если явно
-    # переключиться. Brake=1.0 на остановке просто фиксирует машину.
+    # ВАЖНО: в режиме по умолчанию (arcade) BeamNG автоматически переключается в reverse при удержании тормоза на остановке.
+    # Это ломает поведение ACC/AEB: ego тормозит → останавливается → BeamNG ставит R → ego катится назад →
+    # дистанция растёт → ACC видит "отстал от лидера" → газ → подъезжает → снова тормозит → цикл качелей.
+    # В realistic_automatic машина по умолчанию в D, reverse только если явно переключиться.
+    # Brake=1.0 на остановке просто фиксирует машину.
     vehicle.set_shift_mode('realistic_automatic')
     leader.set_shift_mode('realistic_automatic')
 
@@ -1205,14 +1132,11 @@ def main():
     #   • horizontal FOV ±12° (типичный для ACC)
     #   • vertical FOV ±3° (узкий — не цепляем землю/небо)
     #   • range 3..100м (под ACC, не нужен ближе чем 3м — это для УЗ)
-    # Раньше дефолты давали ±34° конус, и ближайшие лучи попадали в асфальт.
-    # Теперь физически отсеяно на уровне сенсора, плюс фильтр в measure()
-    # как защита второго эшелона.
     radar = Radar(
         'radar', bng, vehicle,
         pos=(0, -2.3, 0.8),
         dir=(0, -1, 0),
-        field_of_view_y=6.0,                 # вертикальный FOV, градусы (±3°)
+        field_of_view_y=6.0,      # вертикальный FOV, градусы (±3°)
         half_angle_deg=12.0,      # горизонтальный half-angle (итого ±12°)
         range_min=3.0,            # ближе не интересует — это работа УЗ
         range_max=100.0,
@@ -1252,6 +1176,7 @@ def main():
     # FOLLOW. CFG.LEADER_BASE_SPEED по умолчанию должен это обеспечивать.
     leader_drv.start(CFG.LEADER_BASE_SPEED)
     logger = CsvLogger(CFG.CSV_PATH)
+    viz = Visualizer(enabled=args.visualize)
 
     print(" ADAS v1 (beta) by koren4ik | BeamNG.tech | ACC + AEB + LKA")
     print(f" Start STATE: {adas.state.value}")
@@ -1259,6 +1184,7 @@ def main():
     print(f" Headway: safety={CFG.SAFETY_HEADWAY:.1f}с, comfort={CFG.COMFORT_HEADWAY:.1f}с")
     print(f" CSV log: {CFG.CSV_PATH}")
     print(f" Lane setpoint: при lane_valid → lane_offset_m, иначе fallback → ego_x")
+    print(f" Visualizer: {'ON' if args.visualize else 'OFF (запусти с --visualize)'}")
 
     start_time = time.time()
     next_tick = start_time
@@ -1344,6 +1270,8 @@ def main():
             elif adas.state == ADASState.STOP:
                 adas.control_stop(m, steering)
                 logger.write(m, adas.state, 0.0, 0.0, steering)
+                viz.update(adas.last_frame_rgb, adas.last_lane_result,
+                           m, adas.state, 0.0, 0.0, steering)
                 print("=" * CFG.LOG_W)
                 print(f"Car stopped! | t={elapsed:.1f}с | X: {m.ego_x:+.2f} м")
                 print("=" * CFG.LOG_W)
@@ -1351,6 +1279,8 @@ def main():
 
             logger.write(m, adas.state, throttle, brake, steering,
                          safety_dist, comfort_dist)
+            viz.update(adas.last_frame_rgb, adas.last_lane_result,
+                       m, adas.state, throttle, brake, steering)
 
     except KeyboardInterrupt:
         print()
@@ -1358,10 +1288,8 @@ def main():
         print("Прервано пользователем (Ctrl+C)")
         print("─" * 60)
     except Exception as e:
-        # Любое неожиданное исключение — выводим traceback в консоль чтобы
-        # понять что случилось. Без этого "тихое" падение beamngpy (например
-        # при разрыве соединения с BeamNG) выглядит как просто "вышли в finally"
-        # без объяснений.
+        # Любое неожиданное исключение — выводим traceback в консоль, чтобы понять что случилось.
+        # Без этого "тихое" падение beamngpy (например при разрыве соединения с BeamNG) выглядит как просто "вышли в finally" без объяснений.
         import traceback
         print()
         print("─" * 60)
@@ -1371,6 +1299,7 @@ def main():
         print("─" * 60)
 
     finally:
+        viz.close()
         logger.close()
         # Финальная статистика lane detection
         total = sum(adas.lane_stats.values())

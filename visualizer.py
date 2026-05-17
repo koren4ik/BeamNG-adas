@@ -44,7 +44,7 @@ COLOR_CAR      = (60, 80, 240)        # машина (красная)
 
 
 class Visualizer:
-    def __init__(self, enabled: bool = True, window_name: str = "ADAS"):
+    def __init__(self, enabled: bool = True, window_name: str = "LKA metrics"):
         self.enabled = enabled
         self.window_name = window_name
         self._last_render_t: float = 0.0
