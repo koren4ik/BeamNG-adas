@@ -324,9 +324,9 @@ control rate. Throttle smoothness improved from mean `|Δthrottle| ≈ 0.07` to
 
 ### Prerequisites
 
-- **BeamNG.tech** v0.38.5 — the research/academic version, *not* consumer BeamNG.drive.
-  BeamNG.tech is **not included in this repository** and must be obtained separately
-  under your own [academic license](https://beamng.tech/) from BeamNG GmbH.
+- **BeamNG.tech** v0.38.5 — the research/academic version, *not* consumer BeamNG.drive
+  (BeamNG.tech is **not included in this repository** and must be obtained separately
+  under your own [academic license](https://beamng.tech/) from BeamNG GmbH).
 - Python 3.10+
 - Python packages from `requirements.txt`
 
