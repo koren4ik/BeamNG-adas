@@ -37,9 +37,17 @@ stack, not just configure a black-box module.
 
 ## Demo:
 
+#### Visualizer preview
 ![ADAS visualizer](docs/visualizer.png)
+
+#### Straight road with shadows
 ![Straight road with shadows](docs/shadows_demo.gif)
+
+#### Sharp turn with yellow center lane
 ![Sharp turn with yellow center lane](docs/sharp_turn-(yellow_lane).gif)
+
+#### ACC + LKA in real scenario with AI-leader
+![ACC + LKA in real scenario with AI-leader](docs/leader_acc_test.gif)
 
 The visualizer shows, in real time:
 - Front camera with steering correction arrow
